@@ -8,6 +8,7 @@ var tc = {
 
     displayKeyCode: 86, // default: V
     rememberSpeed: false, // default: false
+    forcePreferredSpeed: false, //default: false
     audioBoolean: false, // default: false
     startHidden: false, // default: false
     controllerOpacity: 0.3, // default: 0.3
@@ -107,6 +108,7 @@ chrome.storage.sync.get(tc.settings, function (storage) {
       version: tc.settings.version,
       displayKeyCode: tc.settings.displayKeyCode,
       rememberSpeed: tc.settings.rememberSpeed,
+      forcePreferredSpeed: tc.settings.forcePreferredSpeed,
       audioBoolean: tc.settings.audioBoolean,
       startHidden: tc.settings.startHidden,
       enabled: tc.settings.enabled,
@@ -117,6 +119,7 @@ chrome.storage.sync.get(tc.settings, function (storage) {
   tc.settings.lastSpeed = Number(storage.lastSpeed);
   tc.settings.displayKeyCode = Number(storage.displayKeyCode);
   tc.settings.rememberSpeed = Boolean(storage.rememberSpeed);
+  tc.settings.forcePreferredSpeed = Boolean(storage.forcePreferredSpeed);
   tc.settings.audioBoolean = Boolean(storage.audioBoolean);
   tc.settings.enabled = Boolean(storage.enabled);
   tc.settings.startHidden = Boolean(storage.startHidden);
@@ -187,32 +190,40 @@ function defineVideoController() {
 
     var mediaEventAction = function (event) {
       storedSpeed = tc.settings.speeds[event.target.currentSrc];
-      if (!tc.settings.rememberSpeed) {
-        if (!storedSpeed) {
-          log("Overwriting stored speed to 1.0 (rememberSpeed not enabled)", 4);
-          storedSpeed = 1.0;
-        }
-        // resetSpeed isn't really a reset, it's a toggle
-        log("Setting reset keybinding to fast", 5);
-        setKeyBindings("reset", getKeyBindings("fast")); // resetSpeed = fastSpeed
-      } else {
-        log(
-          "Storing lastSpeed into tc.settings.speeds (rememberSpeed enabled)",
-          5
-        );
-        storedSpeed = tc.settings.lastSpeed;
-      }
-      // TODO: Check if explicitly setting the playback rate to 1.0 is
-      // necessary when rememberSpeed is disabled (this may accidentally
-      // override a website's intentional initial speed setting interfering
-      // with the site's default behavior)
-      log("Explicitly setting playbackRate to: " + storedSpeed, 4);
       var controller = event.target.parentElement.querySelector(
         ".vsc-controller"
       );
-
       var video = controller.parentElement.querySelector("video");
-      setSpeed(controller, video, storedSpeed);
+
+      if (tc.settings.forcePreferredSpeed) {
+        // Set the speed to the preferred speed immediately on any media event, 
+        // to prevent a web video player's default behaviour from overriding video
+        // speed's selected speed.
+        setSpeed(controller, video, getKeyBindings("fast"));
+      } else {
+        if (!tc.settings.rememberSpeed) {
+          if (!storedSpeed) {
+            log("Overwriting stored speed to 1.0 (rememberSpeed not enabled)", 4);
+            storedSpeed = 1.0;
+          }
+          // resetSpeed isn't really a reset, it's a toggle
+          log("Setting reset keybinding to fast", 5);
+          setKeyBindings("reset", getKeyBindings("fast")); // resetSpeed = fastSpeed
+        } else {
+          log(
+            "Storing lastSpeed into tc.settings.speeds (rememberSpeed enabled)",
+            5
+          );
+          storedSpeed = tc.settings.lastSpeed;
+        }
+        // TODO: Check if explicitly setting the playback rate to 1.0 is
+        // necessary when rememberSpeed is disabled (this may accidentally
+        // override a website's intentional initial speed setting interfering
+        // with the site's default behavior)
+        log("Explicitly setting playbackRate to: " + storedSpeed, 4);
+  
+        setSpeed(controller, video, storedSpeed);
+      }
     };
 
     target.addEventListener(
@@ -408,24 +419,34 @@ function setupListener() {
         log("Speed event propagation blocked", 4);
         event.stopImmediatePropagation();
       }
-      var video = event.target;
-      var speedIndicator = video.vsc.speedIndicator;
-      var src = video.currentSrc;
-      var speed = video.playbackRate.toFixed(2);
+      var controller = event.target.parentElement.querySelector(
+        ".vsc-controller"
+      );
+      var video = controller.parentElement.querySelector("video");
 
-      log("Playback rate changed to " + speed, 4);
+      if (tc.settings.forcePreferredSpeed) {
+        // Set the speed to the preferred speed immediately on any media event, 
+        // to prevent a web video player's default behaviour from overriding video
+        // speed's selected speed.
+        setSpeed(controller, video, getKeyBindings("fast"));
+      } else {
+        var speedIndicator = controller.shadowRoot.querySelector("span");
+        var src = video.currentSrc;
+        var speed = video.playbackRate.toFixed(2);
+        log("Playback rate changed to " + speed, 4);
 
-      log("Updating controller with new speed", 5);
-      speedIndicator.textContent = speed;
-      tc.settings.speeds[src] = speed;
-      log("Storing lastSpeed in settings for the rememberSpeed feature", 5);
-      tc.settings.lastSpeed = speed;
-      log("Syncing chrome settings for lastSpeed", 5);
-      chrome.storage.sync.set({ lastSpeed: speed }, function () {
-        log("Speed setting saved: " + speed, 5);
-      });
-      // show the controller for 1000ms if it's hidden.
-      runAction("blink", document, null, null);
+        log("Updating controller with new speed", 5);
+        speedIndicator.textContent = speed;
+        tc.settings.speeds[src] = speed;
+        log("Storing lastSpeed in settings for the rememberSpeed feature", 5);
+        tc.settings.lastSpeed = speed;
+        log("Syncing chrome settings for lastSpeed", 5);
+        chrome.storage.sync.set({ lastSpeed: speed }, function () {
+          log("Speed setting saved: " + speed, 5);
+        });
+        // show the controller for 1000ms if it's hidden.
+        runAction("blink", document, null, null);
+      }
     },
     true
   );
